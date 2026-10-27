@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Painel de Viagem no Tempo REAL</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <hta:application id="tm" border="thin" caption="yes" showintaskbar="yes" singleinstance="yes" sysmenu="yes" windowstate="normal" scroll="no" />
+    <style>
+        body { background-color: #111; color: #fff; font-family: 'Courier New', monospace; padding: 10px; text-align: center; overflow: hidden; user-select: none; }
+        .panel-container { border: 4px double #555; padding: 15px; background-color: #222; display: inline-block; }
+        .display-section { margin-bottom: 15px; padding: 8px; }
+        .destination { border: 2px solid #ff3333; background-color: #300; }
+        .present { border: 2px solid #33ff33; background-color: #030; }
+        .last-departed { border: 2px solid #ffcc00; background-color: #330; }
+        .label { font-size: 13px; font-weight: bold; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 3px; }
+        .time-readout { font-size: 28px; font-weight: bold; letter-spacing: 2px; }
+        .controls-group { margin-top: 10px; background: #333; padding: 10px; border: 1px dashed #555; }
+        input { font-family: 'Courier New', monospace; font-size: 16px; padding: 5px; background: #000; color: #ffcc00; border: 2px solid #ffcc00; text-align: center; width: 260px; font-weight: bold; }
+    </style>
+    <script type="text/javascript">
+        var tempoMaquina; var dataPartida; var relogio; var sh;
+        try { sh = new ActiveXObject("WScript.Shell"); } catch(e) { }
+
+        function pad(n) { return n < 10 ? '0' + n : '' + n; }
+        
+        function format(d) {
+            var m = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+            return m[d.getMonth()] + ' ' + pad(d.getDate()) + ' ' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        }
+        
+        function tick() {
+            // Atualiza o painel a cada segundo com a hora real do sistema
+            tempoMaquina = new Date();
+            document.getElementById('present-display').innerHTML = format(tempoMaquina);
+        }
+        
+        function iniciarPainel() {
+            window.resizeTo(540, 540);
+            tempoMaquina = new Date();
+            document.getElementById('present-display').innerHTML = format(tempoMaquina);
+            relogio = setInterval(tick, 1000);
+            document.getElementById('input-comando').focus();
+        }
+
+        function alterarRelogioSistema(dia, mes, ano, horas, minutos) {
+            if (!sh) {
+                alert("Erro: Este painel precisa de ser executado como um ficheiro .hta no Windows para alterar o sistema!");
+                return;
+            }
+            try {
+                // Formata strings para o comando DOS do Windows (DD-MM-AAAA e HH:MM)
+                var dataStr = pad(dia) + "-" + pad(mes) + "-" + ano;
+                var horaStr = pad(horas) + ":" + pad(minutos);
+                
+                // Executa a alteração real no Windows (requer privilégios de Admin)
+                sh.Run("cmd.exe /c date " + dataStr, 0, true);
+                sh.Run("cmd.exe /c time " + horaStr, 0, true);
+            } catch(err) {
+                alert("Falha ao sincronizar com o Windows. Certifique-se de que executou como Administrador.");
+            }
+        }
+
+        function sincronizarHoraInternet() {
+            if (sh) {
+                // Força o Windows a resgatar a hora certa da Internet e reativar o serviço de tempo
+                try {
+                    sh.Run("cmd.exe /c net start w32time", 0, true);
+                    sh.Run("cmd.exe /c w32tm /resync", 0, true);
+                } catch(e) {}
+            }
+        }
+        
+        function verificarTeclado(e) {
+            if (e.keyCode === 13) {
+                var c = document.getElementById('input-comando');
+                var cmd = String(c.value).toUpperCase();
+                dataPartida = new Date(); // Regista o momento exato do clique como partida
+
+                if (cmd === 'HOME') {
+                    sincronizarHoraInternet();
+                    setTimeout(function() {
+                        tempoMaquina = new Date();
+                        document.getElementById('present-display').innerHTML = format(tempoMaquina);
+                        document.getElementById('dest-display').innerHTML = '--- -- ---- --:--:--';
+                        document.getElementById('last-departed-display').innerHTML = format(dataPartida);
+                    }, 500);
+                    c.value = ''; return;
+                }
+
+                // Suporta formatos DIA/MES/ANO ou DIA-MES-ANO
+                var dS = cmd.split('/');
+                if (dS.length !== 3) { dS = cmd.split('-'); }
+                if (dS.length !== 3) { alert('Use o formato: DIA/MES/ANO\n(Ex: 08/04/2015)'); return; }
+
+                var dia = parseInt(dS[0], 10);
+                var mes = parseInt(dS[1], 10) - 1; // Meses em JS começam em 0
+                var ano = parseInt(dS[2], 10);
+
+                // Define uma viagem padrão para as 12:00:00 do dia escolhido
+                var dT = new Date(ano, mes, dia, 12, 0, 0);
+                if (isNaN(dT.getTime())) { alert('Data inválida!'); return; }
+
+                // 1. Aplica a alteração real no relógio do Windows
+                alterarRelogioSistema(dia, mes + 1, ano, 12, 0);
+
+                // 2. Atualiza a interface visual do DeLorean
+                document.getElementById('dest-display').innerHTML = format(dT);
+                document.getElementById('last-departed-display').innerHTML = format(dataPartida);
+                
+                // Força atualização imediata no ecrã verde
+                tempoMaquina = new Date();
+                document.getElementById('present-display').innerHTML = format(tempoMaquina);
+                
+                c.value = '';
+            }
+        }
+    </script>
+</head>
+<body onload="iniciarPainel()">
+    <div class="panel-container">
+        <div class="display-section destination"><div class="label" style="color:#ff3333">Destination Time</div><div id="dest-display" class="time-readout" style="color:#ff5555">--- -- ---- --:--:--</div></div>
+        <div class="display-section present"><div class="label" style="color:#33ff33">Present Time (Time Machine Engine)</div><div id="present-display" class="time-readout" style="color:#55ff55">--- -- ---- --:--:--</div></div>
+        <div class="display-section last-departed"><div class="label" style="color:#ffcc00">Last Time Departed</div><div id="last-departed-display" class="time-readout" style="color:#ffee55">--- -- ---- --:--:--</div></div>
+        <div class="controls-group"><div class="label" style="color:#ffcc00;margin-bottom:5px;font-size:11px">DIGITE UMA DATA (Ex: 08/04/2015) OU HOME + ENTER</div><input type="text" id="input-comando" onkeypress="verificarTeclado(event)"></div>
+    </div>
+</body>
+</html>
